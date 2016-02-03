@@ -30,14 +30,15 @@ use socket_utils::RecvUntil;
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 struct HolePunch {
-    pub secret: Option<[u8; 4]>,
+    pub secret: [u8; 4],
     pub ack: bool,
 }
 
 // TODO All this function should be returning is either an Ok(()) or Err(..)
 /// Returns the socket along with the peer's SocketAddr
 fn blocking_udp_punch_hole(udp_socket: UdpSocket,
-                           secret: Option<[u8; 4]>,
+                           our_secret: [u8; 4],
+                           their_secret: [u8; 4],
                            peer_addr: SocketAddr)
                            -> (UdpSocket, io::Result<SocketAddr>) {
     // Cbor seems to serialize into bytes of different sizes and
@@ -46,7 +47,7 @@ fn blocking_udp_punch_hole(udp_socket: UdpSocket,
 
     let send_data = {
         let hole_punch = HolePunch {
-            secret: secret,
+            secret: our_secret,
             ack: false,
         };
         let mut enc = ::cbor::Encoder::from_memory();
@@ -86,28 +87,31 @@ fn blocking_udp_punch_hole(udp_socket: UdpSocket,
                               .decode::<HolePunch>()
                               .next() {
                         Some(Ok(ref hp)) => {
-                            if hp.secret == secret {
-                                if hp.ack {
-                                    return Ok(Some(addr));
-                                } else {
-                                    let send_data = {
-                                        let hole_punch = HolePunch {
-                                            secret: secret,
-                                            ack: true,
-                                        };
-                                        let mut enc = ::cbor::Encoder::from_memory();
-                                        enc.encode(::std::iter::once(&hole_punch)).unwrap();
-                                        enc.into_bytes()
+                            if hp.secret == our_secret && hp.ack {
+                                return Ok(Some(addr));
+                            }
+                            if hp.secret == their_secret {
+                                let send_data = {
+                                    let hole_punch = HolePunch {
+                                        secret: their_secret,
+                                        ack: true,
                                     };
-                                    periodic_sender.set_payload(send_data);
-                                    periodic_sender.set_destination(addr);
-                                    // TODO Do not do this. The only thing we should do is make
-                                    // sure the supplied peer_addr to this function is == to this
-                                    // addr (which can be spoofed anyway so additionally verify the
-                                    // secret above), otherwise it would mean we are connecting to
-                                    // someone who we are not sending HolePunch struct to
-                                    peer_addr = Some(addr);
-                                }
+                                    let mut enc = ::cbor::Encoder::from_memory();
+                                    enc.encode(::std::iter::once(&hole_punch)).unwrap();
+                                    enc.into_bytes()
+                                };
+                                periodic_sender.set_payload(send_data);
+                                periodic_sender.set_destination(addr);
+                                // TODO Do not do this. The only thing we should do is make
+                                // sure the supplied peer_addr to this function is == to this
+                                // addr (which can be spoofed anyway so additionally verify the
+                                // secret above), otherwise it would mean we are connecting to
+                                // someone who we are not sending HolePunch struct to
+                                // TODO(canndrew): Actually it makes sense that their HolePunch
+                                // message might come from an unexpected address. Instead we should
+                                // sign these messages to make sure we are talking to the right
+                                // person.
+                                peer_addr = Some(addr);
                             } else {
                                 info!("udp_hole_punch non matching secret");
                             }
