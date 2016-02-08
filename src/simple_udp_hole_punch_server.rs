@@ -33,7 +33,7 @@ use rand;
 use sodiumoxide::crypto::sign::PublicKey;
 
 use socket_addr::SocketAddr;
-use listener_message::{ListenerRequest, ListenerResponse};
+use listener_message;
 
 use mapping_context::MappingContext;
 use mapped_socket_addr::MappedSocketAddr;
@@ -80,40 +80,17 @@ impl<'a> SimpleUdpHolePunchServer<'a> {
 
         while !stop_flag.load(Ordering::SeqCst) {
             if let Ok((bytes_read, peer_addr)) = udp_socket.recv_from(&mut read_buf) {
-                if let Ok(msg) = deserialise::<ListenerRequest>(&read_buf[..bytes_read]) {
-                    SimpleUdpHolePunchServer::handle_request(msg,
-                                                             &udp_socket,
-                                                             peer_addr);
-                } else if let Ok(msg) = deserialise::<ListenerResponse>(&read_buf[..bytes_read]) {
-                    SimpleUdpHolePunchServer::handle_response(msg,
-                                                              &udp_socket,
-                                                              peer_addr);
+                if read_buf[..bytes_read] != listener_message::REQUEST_MAGIC_CONSTANT {
+                    continue;
                 }
-            }
-        }
-    }
 
-    fn handle_request(msg: ListenerRequest,
-                      udp_socket: &UdpSocket,
-                      peer_addr: net::SocketAddr) {
-        match msg {
-            ListenerRequest::EchoExternalAddr => {
-                let resp = ListenerResponse::EchoExternalAddr {
+                let resp = listener_message::EchoExternalAddr {
                     external_addr: SocketAddr(peer_addr.clone()),
                 };
 
-                let _ = udp_socket.send_to(&unwrap_result!(serialise(&resp)), peer_addr);
+                let _ = udp_socket.send_to(&unwrap_result!(serialise(&resp)),
+                                           peer_addr);
             }
-        }
-    }
-
-    fn handle_response(_msg: ListenerResponse,
-                       _udp_socket: &UdpSocket,
-                       _peer_addr: net::SocketAddr) {
-        // This is currently unimplemented as SimpleUdpHolePunchServer should not have made
-        // any request - it is supposed to get requests, not make one
-        match _msg {
-            ListenerResponse::EchoExternalAddr { external_addr, } => unimplemented!(),
         }
     }
 

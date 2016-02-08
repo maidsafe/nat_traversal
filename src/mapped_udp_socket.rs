@@ -33,7 +33,7 @@ use socket_addr::SocketAddr;
 use w_result::{WResult, WOk, WErr};
 
 use hole_punch_server_addr::HolePunchServerAddr;
-use listener_message::{ListenerRequest, ListenerResponse};
+use listener_message;
 use mapping_context;
 use mapping_context::MappingContext;
 use mapped_socket_addr::MappedSocketAddr;
@@ -250,7 +250,7 @@ impl MappedUdpSocket {
 
         const MAX_DATAGRAM_SIZE: usize = 256;
 
-        let send_data = unwrap_result!(serialise(&ListenerRequest::EchoExternalAddr));
+        let send_data = listener_message::REQUEST_MAGIC_CONSTANT;
         let mut simple_servers: HashSet<SocketAddr> = mapping_context::simple_servers(&mc)
                                                                       .into_iter().collect();
         let mut deadline = time::SteadyTime::now();
@@ -280,8 +280,8 @@ impl MappedUdpSocket {
                     Ok(None) => break,
                     Err(e) => return WErr(MappedUdpSocketMapError::RecvError { err: e }),
                 };
-                if let Ok(ListenerResponse::EchoExternalAddr { external_addr }) =
-                       deserialise::<ListenerResponse>(&recv_data[..read_size]) {
+                if let Ok(listener_message::EchoExternalAddr { external_addr }) =
+                       deserialise::<listener_message::EchoExternalAddr>(&recv_data[..read_size]) {
                     // Don't ping this simple server again while mapping this socket.
                     simple_servers.remove(&recv_addr);
 

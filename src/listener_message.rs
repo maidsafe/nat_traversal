@@ -15,18 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto::sign::PublicKey;
 use socket_addr::SocketAddr;
 
+pub const REQUEST_MAGIC_CONSTANT: [u8; 4] = ['E' as u8, 'C' as u8, 'H' as u8, 'O' as u8];
 
 #[derive(RustcEncodable, RustcDecodable)]
-pub enum ListenerRequest {
-    EchoExternalAddr,
-}
-
-#[derive(RustcEncodable, RustcDecodable)]
-pub enum ListenerResponse {
-    EchoExternalAddr {
-        external_addr: SocketAddr,
-    },
+pub struct EchoExternalAddr {
+    pub external_addr: SocketAddr,
 }
