@@ -21,7 +21,7 @@
 use socket_addr::SocketAddr;
 
 /// A socket address obtained through some mapping technique.
-#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub struct MappedSocketAddr {
     /// The mapped address
     pub addr: SocketAddr,
