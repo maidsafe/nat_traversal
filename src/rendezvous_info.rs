@@ -32,6 +32,7 @@ pub struct PubRendezvousInfo {
 }
 
 /// The local half of a `PubRendezvousInfo`.
+#[derive(Clone, PartialEq, Eq)]
 pub struct PrivRendezvousInfo {
     secret: [u8; 4],
 }
