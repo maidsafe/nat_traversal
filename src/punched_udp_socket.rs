@@ -256,16 +256,22 @@ impl PunchedUdpSocket {
                                 peer_addr: addr,
                             }, warnings);
                         }
-                        warnings.push(UdpPunchHoleWarning::UnexpectedHolePunchPacket {
-                            hole_punch: HolePunchPacketData {
-                                data: hp,
-                            },
-                        });
+                        // Protect against a malicious peer sending us loads of spurious data.
+                        if warnings.len() < 10 {
+                            warnings.push(UdpPunchHoleWarning::UnexpectedHolePunchPacket {
+                                hole_punch: HolePunchPacketData {
+                                    data: hp,
+                                },
+                            });
+                        }
                     }
                     Some(Err(e)) => {
-                        warnings.push(UdpPunchHoleWarning::InvalidHolePunchPacket {
-                            err: e,
-                        });
+                        // Protect against a malicious peer sending us loads of spurious data.
+                        if warnings.len() < 10 {
+                            warnings.push(UdpPunchHoleWarning::InvalidHolePunchPacket {
+                                err: e,
+                            });
+                        }
                     }
                     None => (),
                 };
