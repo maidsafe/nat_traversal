@@ -69,7 +69,7 @@ pub use rendezvous_info::{PrivRendezvousInfo, PubRendezvousInfo,
                          gen_rendezvous_info};
 pub use mapped_udp_socket::{MappedUdpSocket, MappedUdpSocketMapError,
                             MappedUdpSocketMapWarning, MappedUdpSocketNewError};
-pub use punched_udp_socket::PunchedUdpSocket;
+pub use punched_udp_socket::{PunchedUdpSocket, filter_udp_hole_punch_packet};
 pub use mapped_tcp_socket::{MappedTcpSocket, tcp_punch_hole};
 pub use simple_udp_hole_punch_server::{SimpleUdpHolePunchServer, SimpleUdpHolePunchServerNewError};
 

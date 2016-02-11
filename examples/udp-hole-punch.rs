@@ -133,8 +133,13 @@ fn main() {
     // Now we use the socket, our private rendezvous info and their public rendezvous info to
     // complete the connection.
     let punched_socket = match PunchedUdpSocket::punch_hole(socket, our_priv_info, their_pub_info) {
-        Ok(punched_socket) => punched_socket,
-        Err(e) => {
+        WOk(punched_socket, warnings) => {
+            for warning in warnings {
+                println!("Warning when punching hole: {}", warning);
+            }
+            punched_socket
+        },
+        WErr(e) => {
             println!("IO error punching udp socket: {}", e);
             println!("Exiting.");
             return;
