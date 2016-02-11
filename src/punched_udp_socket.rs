@@ -23,10 +23,11 @@ use std::net::UdpSocket;
 use std;
 use std::thread;
 
+use cbor;
 use time;
 use socket_addr::SocketAddr;
+use w_result::{WResult, WOk, WErr};
 
-use periodic_sender::PeriodicSender;
 use rendezvous_info::{PrivRendezvousInfo, PubRendezvousInfo};
 use rendezvous_info;
 use socket_utils::RecvUntil;
@@ -37,6 +38,12 @@ struct HolePunch {
     pub ack: bool,
 }
 
+/// Used for reporting warnings inside `UdpPunchHoleWarning`
+#[derive(Debug)]
+pub struct HolePunchPacketData {
+    data: HolePunch,
+}
+
 /// A udp socket that has been hole punched.
 pub struct PunchedUdpSocket {
     /// The UDP socket.
@@ -45,14 +52,76 @@ pub struct PunchedUdpSocket {
     pub peer_addr: SocketAddr,
 }
 
+quick_error! {
+    /// Warnings raise by `PunchedUdpSocket::punch_hole`
+    #[derive(Debug)]
+    #[allow(variant_size_differences)]
+    pub enum UdpPunchHoleWarning {
+        /// Received a hole punch packet that does correspond to the connection we are trying to
+        /// make. Possibly, hole punch packets from an unrelated connection or arriving on this socket.
+        UnexpectedHolePunchPacket {
+            hole_punch: HolePunchPacketData,
+        } {
+            description("Received a hole punch packet that does correspond to the \
+                         connection we are trying to make. Possibly, hole punch packets \
+                         from an unrelated connection or arriving on this socket.")
+            display("Received a hole punch packet that does correspond to the \
+                     connection we are trying to make. Possibly, hole punch packets \
+                     from an unrelated connection or arriving on this socket. Debug \
+                     info: {:#?}", hole_punch)
+        }
+        /// Received invalid data on the udp socket while hole punching.
+        InvalidHolePunchPacket {
+            err: cbor::CborError,
+        } {
+            description("Received invalid data on the udp socket while hole punching")
+            display("Received invalid data on the udp socket while hole punching. \
+                     cbor decoding produced the error: {}", err)
+            cause(err)
+        }
+    }
+}
 
+quick_error! {
+    /// Error returned by PunchedUdpSocket::punch_hole
+    #[derive(Debug)]
+    pub enum UdpPunchHoleError {
+        /// Timed out waiting for a response from the peer.
+        TimedOut {
+            description("Timed out waiting for a response from the peer.")
+        }
+        /// IO error when using socket
+        Io {
+            err: io::Error,
+        } {
+            description("IO error when using socket")
+            display("IO error when using socket: {}", err)
+            cause(err)
+        }
+    }
+}
+
+impl From<UdpPunchHoleError> for io::Error {
+    fn from(err: UdpPunchHoleError) -> io::Error {
+        match err {
+            UdpPunchHoleError::TimedOut => io::Error::new(io::ErrorKind::TimedOut,
+                                                          "Udp hole punching timed out \
+                                                           waiting for a response from \
+                                                           the peer"),
+            UdpPunchHoleError::Io { err } => err,
+        }
+    }
+}
 
 impl PunchedUdpSocket {
     /// Punch a udp socket using a mapped socket and the peer's rendezvous info.
-    pub fn punch_hole(mut socket: UdpSocket,
+    pub fn punch_hole(socket: UdpSocket,
                       our_priv_rendezvous_info: PrivRendezvousInfo,
                       their_pub_rendezvous_info: PubRendezvousInfo)
-        -> io::Result<PunchedUdpSocket> {
+        -> WResult<PunchedUdpSocket, UdpPunchHoleWarning, UdpPunchHoleError>
+    {
+        let mut warnings = Vec::new();
+
         let (endpoints, their_secret)
             = rendezvous_info::decompose(their_pub_rendezvous_info);
         let our_secret
@@ -136,7 +205,7 @@ impl PunchedUdpSocket {
                 // TODO(canndrew): How should we handle partial write?
                 let _ = match socket.send_to(&send_data[..], &**addr) {
                     Ok(n) => n,
-                    Err(e) => return Err(e),
+                    Err(e) => return WErr(UdpPunchHoleError::Io { err: e }),
                 };
             }
             // Keep reading until it's time to send to all endpoints again.
@@ -144,17 +213,17 @@ impl PunchedUdpSocket {
                 let (read_size, addr) = match socket.recv_until(&mut recv_data[..], deadline) {
                     Ok(Some(x)) => x,
                     Ok(None) => break,
-                    Err(e) => return Err(e),
+                    Err(e) => return WErr(UdpPunchHoleError::Io { err: e }),
                 };
                 match ::cbor::Decoder::from_reader(&recv_data[..read_size])
                              .decode::<HolePunch>()
                              .next() {
-                    Some(Ok(ref hp)) => {
+                    Some(Ok(hp)) => {
                         if hp.secret == our_secret && hp.ack {
-                            return Ok(PunchedUdpSocket {
+                            return WOk(PunchedUdpSocket {
                                 socket: socket,
                                 peer_addr: addr,
-                            });
+                            }, warnings);
                         }
                         if hp.secret == their_secret {
                             let send_data = {
@@ -175,31 +244,34 @@ impl PunchedUdpSocket {
                             // TODO(canndrew): handle partial writes.
                             let _ = match socket.send_to(&send_data[..], &*addr) {
                                 Ok(n) => n,
-                                Err(e) => return Err(e),
+                                Err(e) => return WErr(UdpPunchHoleError::Io { err: e }),
                             };
                             thread::sleep(std::time::Duration::from_millis(100));
                             let _ = match socket.send_to(&send_data[..], &*addr) {
                                 Ok(n) => n,
-                                Err(e) => return Err(e),
+                                Err(e) => return WErr(UdpPunchHoleError::Io { err: e }),
                             };
-                            return Ok(PunchedUdpSocket {
+                            return WOk(PunchedUdpSocket {
                                 socket: socket,
                                 peer_addr: addr,
-                            });
+                            }, warnings);
                         }
-                        else {
-                            // TODO(canndrew): report this error
-                        }
+                        warnings.push(UdpPunchHoleWarning::UnexpectedHolePunchPacket {
+                            hole_punch: HolePunchPacketData {
+                                data: hp,
+                            },
+                        });
                     }
                     Some(Err(e)) => {
-                        // TODO(canndrew): report this error
+                        warnings.push(UdpPunchHoleWarning::InvalidHolePunchPacket {
+                            err: e,
+                        });
                     }
                     None => (),
                 };
             }
         }
-        Err(io::Error::new(io::ErrorKind::TimedOut,
-                           "Timed out waiting for rendevous connection"))
+        WErr(UdpPunchHoleError::TimedOut)
     }
 }
 

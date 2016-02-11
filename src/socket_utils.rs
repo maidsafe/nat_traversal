@@ -19,7 +19,7 @@ use std::io;
 use std::net::{UdpSocket, Ipv4Addr, Ipv6Addr};
 use socket_addr::SocketAddr;
 use std::io::ErrorKind;
-use net2::TcpBuilder;
+//use net2::TcpBuilder;
 
 /// A self interruptable receive trait that allows a timed-out period to be defined
 pub trait RecvUntil {
@@ -90,6 +90,7 @@ pub fn ipv6_is_unspecified(addr: &Ipv6Addr) -> bool {
     addr.segments() == [0, 0, 0, 0, 0, 0, 0, 0]
 }
 
+/*
 #[cfg(target_family = "unix")]
 #[allow(unsafe_code)]
 pub fn enable_so_reuseport(sock: &TcpBuilder) -> io::Result<()> {
@@ -116,3 +117,5 @@ pub fn enable_so_reuseport(sock: &TcpBuilder) -> io::Result<()> {
 pub fn enable_so_reuseport(sock: &TcpBuilder) -> io::Result<()> {
     Ok(())
 }
+*/
+

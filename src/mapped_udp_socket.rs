@@ -26,18 +26,15 @@ use std::collections::HashSet;
 
 use igd;
 use time;
-use get_if_addrs;
 use ip::{SocketAddrExt, IpAddr};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use socket_addr::SocketAddr;
 use w_result::{WResult, WOk, WErr};
 
-use hole_punch_server_addr::HolePunchServerAddr;
 use listener_message::{ListenerRequest, ListenerResponse};
 use mapping_context;
 use mapping_context::MappingContext;
 use mapped_socket_addr::MappedSocketAddr;
-use periodic_sender::PeriodicSender;
 use socket_utils;
 use socket_utils::RecvUntil;
 
@@ -266,13 +263,12 @@ impl MappedUdpSocket {
         let send_data = unwrap_result!(serialise(&ListenerRequest::EchoExternalAddr));
         let mut simple_servers: HashSet<SocketAddr> = mapping_context::simple_servers(&mc)
                                                                       .into_iter().collect();
-        let mut deadline = time::SteadyTime::now();
+
         // Ping all the simple servers and waiting for a response.
-        // Run this loop at most 8 times for a maximum timeout of 250ms * 8 == 2 seconds.
-        let mut attempt = 0;
-        let mut max_attempts = 8;
-        while attempt < max_attempts && simple_servers.len() > 0 {
-            attempt += 1;
+        let start_time = time::SteadyTime::now();
+        let mut deadline = start_time;
+        let mut final_deadline = start_time + time::Duration::seconds(2);
+        while deadline < final_deadline && simple_servers.len() > 0 {
             deadline = deadline + time::Duration::milliseconds(250);
 
             // TODO(canndrew): We should limit the number of servers that we send to. If the user
@@ -304,13 +300,13 @@ impl MappedUdpSocket {
                     // give us the same address. By contrast, servers on the same subnet as us or
                     // behind the same carrier-level NAT are likely to respond in under a second.
                     // So once we have one global address drop the timeout.
-                    // TODO(canndrew): For now this is commented-out. Waiting for the is_global
-                    // method to become available in the next stable rust.
-                    /*
-                    if recv_addr.ip().is_global() {
-                        max_attempts = 4;
+
+                    // TODO(canndrew): Use IpAddr::is_global when it's available
+                    // let is_global = recv_addr.is_global();
+                    let is_global = false;
+                    if is_global {
+                        final_deadline = start_time + time::Duration::seconds(1);
                     };
-                    */
 
                     // Add this endpoint if we don't already know about it. We may have found it
                     // through IGD or it may be a local interface.

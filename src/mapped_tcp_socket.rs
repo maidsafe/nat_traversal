@@ -40,22 +40,22 @@ impl MappedTcpSocket {
     /// Map an existing tcp socket. The socket must not bound or connected. This
     /// function will set the options to make the socket address reuseable
     /// before binding it.
-    pub fn map(socket: net2::TcpBuilder, mc: &MappingContext)
+    pub fn map(_socket: net2::TcpBuilder, _mc: &MappingContext)
                -> MappedTcpSocket {
         unimplemented!();
     }
 
     /// Create a new `MappedTcpSocket`
-    pub fn new(mc: &MappingContext) -> MappedTcpSocket {
+    pub fn new(_mc: &MappingContext) -> MappedTcpSocket {
         unimplemented!();
     }
 }
 
 /// Perform a tcp rendezvous connect. `socket` should have been obtained from a
 /// `MappedTcpSocket`.
-pub fn tcp_punch_hole(socket: net2::TcpBuilder,
-                      our_priv_rendezvous_info: PrivRendezvousInfo,
-                      their_pub_rendezvous_info: PubRendezvousInfo)
+pub fn tcp_punch_hole(_socket: net2::TcpBuilder,
+                      _our_priv_rendezvous_info: PrivRendezvousInfo,
+                      _their_pub_rendezvous_info: PubRendezvousInfo)
                       -> TcpStream {
     unimplemented!();
 }

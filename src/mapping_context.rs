@@ -20,20 +20,15 @@
 
 use std::sync::RwLock;
 use std::io;
-use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std;
 use std::thread;
 use std::time::Duration;
 
-use ip::IpAddr;
 use igd;
 use socket_addr::SocketAddr;
 use w_result::{WResult, WOk, WErr};
 use get_if_addrs;
 use void::Void;
-
-use hole_punch_server_addr::HolePunchServerAddr;
 
 /// You need to create a `MappingContext` before doing any socket mapping. This
 /// `MappingContext` should ideally be kept throughout the lifetime of the

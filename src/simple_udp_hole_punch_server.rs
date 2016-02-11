@@ -22,15 +22,11 @@ use std::io;
 use std::net;
 use std::net::UdpSocket;
 use std::time::Duration;
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use get_if_addrs;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
-use rand;
-use sodiumoxide::crypto::sign::PublicKey;
 use w_result::{WResult, WOk, WErr};
 
 use socket_addr::SocketAddr;
@@ -44,7 +40,8 @@ const UDP_READ_TIMEOUT_SECS: u64 = 2;
 
 /// RAII type for a hole punch server which speaks the simple hole punching protocol.
 pub struct SimpleUdpHolePunchServer<'a> {
-    mapping_context: &'a MappingContext,
+    // TODO(canndrew): Use this to refresh our external addrs.
+    _mapping_context: &'a MappingContext,
     stop_flag: Arc<AtomicBool>,
     _raii_joiner: RaiiThreadJoiner,
     known_endpoints: Vec<MappedSocketAddr>,
@@ -103,7 +100,7 @@ impl<'a> SimpleUdpHolePunchServer<'a> {
         }));
 
         WOk(SimpleUdpHolePunchServer {
-            mapping_context: mapping_context,
+            _mapping_context: mapping_context,
             stop_flag: stop_flag,
             _raii_joiner: raii_joiner,
             known_endpoints: mapped_socket.endpoints,
@@ -149,7 +146,7 @@ impl<'a> SimpleUdpHolePunchServer<'a> {
         // This is currently unimplemented as SimpleUdpHolePunchServer should not have made
         // any request - it is supposed to get requests, not make one
         match _msg {
-            ListenerResponse::EchoExternalAddr { external_addr, } => unimplemented!(),
+            ListenerResponse::EchoExternalAddr { .. } => unimplemented!(),
         }
     }
 

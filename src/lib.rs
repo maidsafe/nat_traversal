@@ -41,35 +41,29 @@
 // #![feature(plugin)]
 // #![plugin(clippy)]
 
-#![allow(unused, unused_extern_crates)]
-
 // TODO(canndrew): Remove this once this: https://github.com/tailhook/quick-error/issues/18
 // is fixed.
 #![allow(missing_docs)]
 
 extern crate cbor;
-#[macro_use]
-extern crate log;
 extern crate net2;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate time;
-extern crate crossbeam;
 extern crate void;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate igd;
 extern crate socket_addr;
 extern crate get_if_addrs;
-extern crate sodiumoxide;
-extern crate libc;
+//extern crate libc;
 extern crate w_result;
 extern crate ip;
+#[allow(unused_extern_crates)] // Needed because the crate is only used for macros
 #[macro_use]
 extern crate quick_error;
 
 pub use mapping_context::{MappingContext, MappingContextNewError, MappingContextNewWarning};
-pub use hole_punch_server_addr::HolePunchServerAddr;
 pub use mapped_socket_addr::MappedSocketAddr;
 pub use rendezvous_info::{PrivRendezvousInfo, PubRendezvousInfo,
                          gen_rendezvous_info};
@@ -80,14 +74,12 @@ pub use mapped_tcp_socket::{MappedTcpSocket, tcp_punch_hole};
 pub use simple_udp_hole_punch_server::{SimpleUdpHolePunchServer, SimpleUdpHolePunchServerNewError};
 
 mod mapping_context;
-mod hole_punch_server_addr;
 mod mapped_socket_addr;
 mod rendezvous_info;
 mod mapped_udp_socket;
 mod punched_udp_socket;
 mod mapped_tcp_socket;
 mod simple_udp_hole_punch_server;
-mod periodic_sender;
 mod socket_utils;
 mod listener_message;
 
