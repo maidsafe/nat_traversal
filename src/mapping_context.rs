@@ -37,7 +37,8 @@ use void::Void;
 pub struct MappingContext {
     interfaces_v4: RwLock<Vec<InterfaceV4>>,
     interfaces_v6: RwLock<Vec<InterfaceV6>>,
-    simple_servers: RwLock<Vec<SocketAddr>>,
+    simple_udp_servers: RwLock<Vec<SocketAddr>>,
+    simple_tcp_servers: RwLock<Vec<SocketAddr>>,
 }
 
 #[derive(Clone)]
@@ -168,18 +169,29 @@ impl MappingContext {
             }
         }
         let mc = MappingContext {
-            simple_servers: RwLock::new(Vec::new()),
             interfaces_v4: RwLock::new(interfaces_v4),
             interfaces_v6: RwLock::new(interfaces_v6),
+            simple_udp_servers: RwLock::new(Vec::new()),
+            simple_tcp_servers: RwLock::new(Vec::new()),
         };
         WOk(mc, warnings)
     }
 
-    /// Inform the context about external servers that speak the simple hole punch server protocol.
-    pub fn add_simple_servers<S>(&self, servers: S)
+    /// Inform the context about external servers that speak the UDP simple hole punch server
+    /// protocol.
+    pub fn add_simple_udp_servers<S>(&self, servers: S)
         where S: IntoIterator<Item=SocketAddr>
     {
-        let mut s = unwrap_result!(self.simple_servers.write());
+        let mut s = unwrap_result!(self.simple_udp_servers.write());
+        s.extend(servers)
+    }
+
+    /// Inform the context about external servers that speak the TCP simple hole punch server
+    /// protocol.
+    pub fn add_simple_tcp_servers<S>(&self, servers: S)
+        where S: IntoIterator<Item=SocketAddr>
+    {
+        let mut s = unwrap_result!(self.simple_tcp_servers.write());
         s.extend(servers)
     }
 }
@@ -192,9 +204,15 @@ pub fn interfaces_v6(mc: &MappingContext) -> Vec<InterfaceV6> {
     unwrap_result!(mc.interfaces_v6.read()).clone()
 }
 
-pub fn simple_servers(mc: &MappingContext) -> Vec<SocketAddr> {
-    unwrap_result!(mc.simple_servers.read()).clone()
+pub fn simple_udp_servers(mc: &MappingContext) -> Vec<SocketAddr> {
+    unwrap_result!(mc.simple_udp_servers.read()).clone()
 }
+
+/*
+pub fn simple_tcp_servers(mc: &MappingContext) -> Vec<SocketAddr> {
+    unwrap_result!(mc.simple_tcp_servers.read()).clone()
+}
+*/
 
 #[cfg(test)]
 mod tests {
