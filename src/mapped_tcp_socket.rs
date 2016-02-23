@@ -90,30 +90,9 @@ quick_error! {
                      returned an error: {}", gateway_addr, err)
             cause(err)
         }
-        MappingSocketCreate { err: io::Error } {
-            description("Error creating a temporary socket for mapping.")
-            display("Error creating a temporary socket for mapping: {}", err)
-            cause(err)
-        }
-        MappingSocketEnableReuseAddr { err: io::Error } {
-            description("Error setting SO_REUSEADDR on a temporary socket created for mapping.")
-            display("Error setting SO_REUSEADDR on a temporary socket created for mapping. \
-                     Got IO error: {}", err)
-            cause(err)
-        }
-        MappingSocketEnableReusePort { err: io::Error } {
-            description("Error setting SO_REUSEPORT on a temporary socket created for mapping.")
-            display("Error setting SO_REUSEPORT on a temporary socket created for mapping. \
-                     Got IO error: {}", err)
-            cause(err)
-        }
-        MappingSocketBind { err: io::Error } {
-            description("Error binding a temporary socket created for mapping to the same address \
-                         as the argument socket. Were SO_REUSEPORT and SO_REUSEADDR set on the \
-                         argument socket before it was bound?")
-            display("Error binding a temporary socket created for mapping to the same address as \
-                     the argument socket. IO error: {}. Were SO_REUSEPORT and SO_REUSEADDR set on \
-                     the argument socket before it was bound?", err)
+        NewReusablyBoundSocket { err: NewReusablyBoundSocketError } {
+            description("Error creating a reusably bound temporary socket for mapping.")
+            display("Error creating a reusably bound temporary socket for mapping: {}", err)
             cause(err)
         }
         MappingSocketConnect {
@@ -181,6 +160,63 @@ quick_error! {
             cause(err)
         }
     }
+}
+
+quick_error! {
+    /// Errors returned by new_reusably_bound_socket
+    #[derive(Debug)]
+    pub enum NewReusablyBoundSocketError {
+        Create { err: io::Error } {
+            description("Error creating socket.")
+            display("Error creating socket: {}", err)
+            cause(err)
+        }
+        EnableReuseAddr { err: io::Error } {
+            description("Error setting SO_REUSEADDR on socket.")
+            display("Error setting SO_REUSEADDR on socket. \
+                     Got IO error: {}", err)
+            cause(err)
+        }
+        EnableReusePort { err: io::Error } {
+            description("Error setting SO_REUSEPORT on socket.")
+            display("Error setting SO_REUSEPORT on socket. \
+                     Got IO error: {}", err)
+            cause(err)
+        }
+        Bind { err: io::Error } {
+            description("Error binding new socket to the provided address. Likely a socket was \
+                         already bound to this address without SO_REUSEPORT and SO_REUSEADDR \
+                         being set")
+            display("Error binding new socket to the provided address: {}. Likely a socket was \
+                     already bound to this address without SO_REUSEPORT and SO_REUSEADDR being \
+                     set", err)
+            cause(err)
+        }
+    }
+}
+
+pub fn new_reusably_bound_socket(local_addr: &net::SocketAddr) -> Result<net2::TcpBuilder, NewReusablyBoundSocketError> {
+    let socket_res = match SocketAddrExt::ip(local_addr) {
+        IpAddr::V4(..) => net2::TcpBuilder::new_v4(),
+        IpAddr::V6(..) => net2::TcpBuilder::new_v6(),
+    };
+    let socket = match socket_res {
+        Ok(socket) => socket,
+        Err(e) => return Err(NewReusablyBoundSocketError::Create { err: e }),
+    };
+    match socket.reuse_address(true) {
+        Ok(_) => (),
+        Err(e) => return Err(NewReusablyBoundSocketError::EnableReuseAddr { err: e }),
+    };
+    match socket_utils::enable_so_reuseport(&socket) {
+        Ok(()) => (),
+        Err(e) => return Err(NewReusablyBoundSocketError::EnableReusePort { err: e }),
+    };
+    match socket.bind(local_addr) {
+        Ok(..) => (),
+        Err(e) => return Err(NewReusablyBoundSocketError::Bind { err: e }),
+    };
+    Ok(socket)
 }
 
 impl MappedTcpSocket {
@@ -308,25 +344,9 @@ impl MappedTcpSocket {
         let simple_servers = mapping_context::simple_tcp_servers(&mc);
         for simple_server in simple_servers {
             mapping_threads.push(thread::spawn(move || {
-                let mapping_socket_res = match SocketAddrExt::ip(&local_addr) {
-                    IpAddr::V4(..) => net2::TcpBuilder::new_v4(),
-                    IpAddr::V6(..) => net2::TcpBuilder::new_v6(),
-                };
-                let mapping_socket = match mapping_socket_res {
+                let mapping_socket = match new_reusably_bound_socket(&local_addr) {
                     Ok(mapping_socket) => mapping_socket,
-                    Err(e) => return Err(MappedTcpSocketMapWarning::MappingSocketCreate { err: e }),
-                };
-                match mapping_socket.reuse_address(true) {
-                    Ok(_) => (),
-                    Err(e) => return Err(MappedTcpSocketMapWarning::MappingSocketEnableReuseAddr { err: e }),
-                };
-                match socket_utils::enable_so_reuseport(&mapping_socket) {
-                    Ok(()) => (),
-                    Err(e) => return Err(MappedTcpSocketMapWarning::MappingSocketEnableReusePort { err: e }),
-                };
-                match mapping_socket.bind(local_addr) {
-                    Ok(..) => (),
-                    Err(e) => return Err(MappedTcpSocketMapWarning::MappingSocketBind { err: e }),
+                    Err(e) => return Err(MappedTcpSocketMapWarning::NewReusablyBoundSocket { err: e }),
                 };
                 let mut stream = match mapping_socket.connect(&*simple_server) {
                     Ok(stream) => stream,
