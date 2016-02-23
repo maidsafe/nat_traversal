@@ -208,11 +208,9 @@ pub fn simple_udp_servers(mc: &MappingContext) -> Vec<SocketAddr> {
     unwrap_result!(mc.simple_udp_servers.read()).clone()
 }
 
-/*
 pub fn simple_tcp_servers(mc: &MappingContext) -> Vec<SocketAddr> {
     unwrap_result!(mc.simple_tcp_servers.read()).clone()
 }
-*/
 
 #[cfg(test)]
 mod tests {

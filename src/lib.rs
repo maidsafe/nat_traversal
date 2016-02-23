@@ -56,7 +56,6 @@ extern crate maidsafe_utilities;
 extern crate igd;
 extern crate socket_addr;
 extern crate get_if_addrs;
-//extern crate libc;
 extern crate w_result;
 extern crate ip;
 #[allow(unused_extern_crates)] // Needed because the crate is only used for macros
