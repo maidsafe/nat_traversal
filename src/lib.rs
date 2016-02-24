@@ -71,6 +71,7 @@ pub use mapped_udp_socket::{MappedUdpSocket, MappedUdpSocketMapError,
 pub use punched_udp_socket::{PunchedUdpSocket, filter_udp_hole_punch_packet};
 pub use mapped_tcp_socket::{MappedTcpSocket, tcp_punch_hole};
 pub use simple_udp_hole_punch_server::{SimpleUdpHolePunchServer, SimpleUdpHolePunchServerNewError};
+pub use simple_tcp_hole_punch_server::{SimpleTcpHolePunchServer, SimpleTcpHolePunchServerNewError};
 
 mod mapping_context;
 mod mapped_socket_addr;
@@ -79,6 +80,7 @@ mod mapped_udp_socket;
 mod punched_udp_socket;
 mod mapped_tcp_socket;
 mod simple_udp_hole_punch_server;
+mod simple_tcp_hole_punch_server;
 mod socket_utils;
 mod listener_message;
 

@@ -30,6 +30,8 @@ use w_result::{WResult, WOk, WErr};
 use get_if_addrs;
 use void::Void;
 
+use socket_utils;
+
 /// You need to create a `MappingContext` before doing any socket mapping. This
 /// `MappingContext` should ideally be kept throughout the lifetime of the
 /// program. Internally it caches a addresses of UPnP servers and hole punching
@@ -120,9 +122,7 @@ impl MappingContext {
                     continue;
                 },
             };
-            // TODO(canndrew): use is_loopback when it's stable
-            //if addr.is_loopback() {
-            if addr_v4.octets()[0] == 127 {
+            if socket_utils::ipv4_is_loopback(&addr_v4) {
                 interfaces_v4.push(InterfaceV4 {
                     gateway: None,
                     addr: addr_v4,

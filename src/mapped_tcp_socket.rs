@@ -25,7 +25,9 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::thread;
 use std::str;
+use std::sync::mpsc;
 
+use void::Void;
 use igd;
 use net2;
 use socket_addr::SocketAddr;
@@ -36,6 +38,7 @@ use maidsafe_utilities::serialisation::{deserialise, SerialisationError};
 use mapping_context::MappingContext;
 use mapped_socket_addr::MappedSocketAddr;
 use rendezvous_info::{PrivRendezvousInfo, PubRendezvousInfo};
+use rendezvous_info;
 use socket_utils;
 use mapping_context;
 use listener_message;
@@ -423,11 +426,241 @@ impl MappedTcpSocket {
     }
 }
 
+quick_error! {
+    #[derive(Debug)]
+    pub enum TcpPunchHoleWarning {
+        Connect { err: io::Error } {
+            description("Connecting to endpoint failed.")
+            display("Connecting to endpoint failed: {}", err)
+            cause(err)
+        }
+        Accept { err: io::Error } {
+            description("Error accepting an incoming connection.")
+            display("Error accepting an incoming connection: {}", err)
+            cause(err)
+        }
+        StreamSetTimeout { err: io::Error } {
+            description("Error setting the timeout on a connected stream.")
+            display("Error setting the timeout on a connected stream: {}", err)
+            cause(err)
+        }
+        StreamIo { err: io::Error } {
+            description("IO error communicating with a connected host.")
+            display("IO error communicating with a connected host: {}", err)
+            cause(err)
+        }
+        InvalidResponse { data: [u8; 4] } {
+            description("A connected host provided an invalid response to the handshake.")
+            display("A connected host provided an invalid response to the handshake: {:?}", data)
+        }
+    }
+}
+
+quick_error! {
+    #[derive(Debug)]
+    pub enum TcpPunchHoleError {
+        SocketLocalAddr { err: io::Error } {
+            description("Error getting the local address of the provided socket.")
+            display("Error getting the local address of the provided socket: {}", err)
+            cause(err)
+        }
+        NewReusablyBoundSocket { err: NewReusablyBoundSocketError } {
+            description("Error binding another socket to the same local address as the provided socket.")
+            display("Error binding another socket to the same local address as the provided socket: {}", err)
+            cause(err)
+        }
+        Listen { err: io::Error } {
+            description("Error listening on the provided socket.")
+            display("Error listening on the provided socket: {}", err)
+            cause(err)
+        }
+        TimedOut { warnings: Vec<TcpPunchHoleWarning> } {
+            description("Tcp hole punching timed out without making a successful connection.")
+            display("Tcp hole punching timed out without making a successful connection. The \
+                     following warnings were raised during hole punching: {:?}", warnings)
+        }
+    }
+}
+
 /// Perform a tcp rendezvous connect. `socket` should have been obtained from a
 /// `MappedTcpSocket`.
-pub fn tcp_punch_hole(_socket: net2::TcpBuilder,
-                      _our_priv_rendezvous_info: PrivRendezvousInfo,
-                      _their_pub_rendezvous_info: PubRendezvousInfo)
-                      -> TcpStream {
-    unimplemented!();
+pub fn tcp_punch_hole(socket: net2::TcpBuilder,
+                      our_priv_rendezvous_info: PrivRendezvousInfo,
+                      their_pub_rendezvous_info: PubRendezvousInfo)
+                      -> WResult<TcpStream, TcpPunchHoleWarning, TcpPunchHoleError> {
+    // In order to do tcp hole punching we connect to all of their endpoints in parallel while
+    // simultaneously listening. All the sockets we use must be bound to the same local address. As
+    // soon as we successfully connect and exchange secrets, or accept and exchange secrets, we
+    // return.
+    //
+    // It would be way better to implement this using non-blocking sockets but at the moment mio
+    // doesn't provide any way to convert a non-blocking socket back into a blocking socket. So
+    // we're stuck with spawning (and then detaching) loads of threads. Setting the read/write
+    // timeouts should prevent the detached threads from leaking indefinitely.
+
+    // The total timeout for the entire function.
+    let timeout = Duration::from_secs(20);
+
+    let mut warnings = Vec::new();
+
+    // The channel we will use to collect the results from the many worker threads.
+    let (results_tx, results_rx) = mpsc::channel::<Option<Result<TcpStream, TcpPunchHoleWarning>>>();
+
+    let our_secret = rendezvous_info::get_priv_secret(our_priv_rendezvous_info);
+    let (their_endpoints, their_secret) = rendezvous_info::decompose(their_pub_rendezvous_info);
+
+    let local_addr = match socket_utils::tcp_builder_local_addr(&socket) {
+        Ok(local_addr) => local_addr,
+        Err(e) => return WErr(TcpPunchHoleError::SocketLocalAddr { err: e }),
+    };
+
+    // Try connecting to every potential endpoint in a seperate thread.
+    for endpoint in their_endpoints {
+        let addr = endpoint.addr;
+        // Important to call new_reusably_bound_socket outside the inner thread so that it's called
+        // before the listen() call below.
+        let mapping_socket = match new_reusably_bound_socket(&local_addr) {
+            Ok(mapping_socket) => mapping_socket,
+            Err(e) => return WErr(TcpPunchHoleError::NewReusablyBoundSocket { err: e }),
+        };
+        let results_tx_clone = results_tx.clone();
+        let _ = thread!("tcp_punch_hole connect", move || {
+            let f = || {
+                let mut stream = match mapping_socket.connect(&*addr) {
+                    Ok(stream) => stream,
+                    Err(e) => return Err(TcpPunchHoleWarning::Connect { err: e }),
+                };
+                match stream.set_write_timeout(Some(timeout)) {
+                    Ok(()) => (),
+                    Err(e) => return Err(TcpPunchHoleWarning::StreamSetTimeout { err: e }),
+                };
+                match stream.set_read_timeout(Some(timeout)) {
+                    Ok(()) => (),
+                    Err(e) => return Err(TcpPunchHoleWarning::StreamSetTimeout { err: e }),
+                };
+                match stream.write_all(&our_secret[..]) {
+                    Ok(()) => (),
+                    Err(e) => return Err(TcpPunchHoleWarning::StreamIo { err: e }),
+                };
+                let mut recv_data = [0u8; 4];
+                match stream.read_exact(&mut recv_data[..]) {
+                    Ok(()) => (),
+                    Err(e) => return Err(TcpPunchHoleWarning::StreamIo { err: e }),
+                };
+                if recv_data != their_secret {
+                    return Err(TcpPunchHoleWarning::InvalidResponse { data: recv_data });
+                };
+                Ok(stream)
+            };
+            let _ = results_tx_clone.send(Some(f()));
+        });
+    };
+
+    // Listen for incoming connections.
+    let listener = match socket.listen(128) {
+        Ok(listener) => listener,
+        Err(e) => return WErr(TcpPunchHoleError::Listen { err: e }),
+    };
+    let (listener_shutdown_tx, listener_shutdown_rx) = mpsc::channel::<Void>();
+    let results_tx_clone = results_tx.clone();
+    let _ = thread!("tcp_punch_hole listen", move || {
+        for stream_res in listener.incoming() {
+            // First, check if we should shutdown.
+            match listener_shutdown_rx.try_recv() {
+                Ok(v) => match v {},
+                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Empty) => (),
+            };
+            let mut stream = match stream_res {
+                Ok(stream) => stream,
+                Err(e) => {
+                    match results_tx_clone.send(Some(Err(TcpPunchHoleWarning::Accept { err: e }))) {
+                        Ok(()) => (),
+                        Err(_) => break,
+                    }
+                    continue;
+                },
+            };
+
+            // Spawn a new thread here to prevent someone from connecting then not sending any data
+            // and preventing us from accepting any more connections.
+            let results_tx_clone = results_tx_clone.clone();
+            let _ = thread!("tcp_punch_hole listen handshake", move || {
+                match stream.set_write_timeout(Some(timeout)) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        let _ = results_tx_clone.send(Some(Err(TcpPunchHoleWarning::StreamSetTimeout { err: e })));
+                        return;
+                    },
+                };
+                match stream.set_read_timeout(Some(timeout)) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        let _ = results_tx_clone.send(Some(Err(TcpPunchHoleWarning::StreamSetTimeout { err: e })));
+                        return;
+                    },
+                };
+                match stream.write_all(&our_secret[..]) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        let _ = results_tx_clone.send(Some(Err(TcpPunchHoleWarning::StreamIo { err: e })));
+                        return;
+                    },
+                };
+                let mut recv_data = [0u8; 4];
+                match stream.read_exact(&mut recv_data[..]) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        let _ = results_tx_clone.send(Some(Err(TcpPunchHoleWarning::StreamIo { err: e })));
+                        return;
+                    },
+                };
+                if recv_data != their_secret {
+                    let _ = results_tx_clone.send(Some(Err(TcpPunchHoleWarning::InvalidResponse { data: recv_data })));
+                    return;
+                }
+                let _ = results_tx_clone.send(Some(Ok(stream)));
+            });
+        }
+    });
+    
+    // Create a separate thread for timing out.
+    // TODO(canndrew): We won't need to do this one this is fixed: https://github.com/rust-lang/rfcs/issues/962
+    let results_tx_clone = results_tx.clone();
+    let timeout_thread = thread!("tcp_punch_hole timeout", move || {
+        thread::park_timeout(timeout);
+        let _ = results_tx_clone.send(None);
+    });
+    let timeout_thread_handle = timeout_thread.thread();
+
+    // Process the results that the worker threads send us.
+    loop {
+        match results_rx.recv() {
+            // We timed out.
+            Ok(None) => {
+                timeout_thread_handle.unpark();
+                drop(listener_shutdown_tx);
+                let _ = TcpStream::connect(local_addr);
+                return WErr(TcpPunchHoleError::TimedOut { warnings: warnings });
+            },
+
+            // Success!
+            Ok(Some(Ok(stream))) => {
+                timeout_thread_handle.unpark();
+                drop(listener_shutdown_tx);
+                let _ = TcpStream::connect(local_addr);
+                return WOk(stream, warnings);
+            },
+            
+            // One of the working threads raised a warning.
+            Ok(Some(Err(e))) => {
+                warnings.push(e);
+            },
+
+            // All the senders have closed. This could only happen if all of the worker threads
+            // panicked.
+            Err(_) => panic!("In tcp_punch_hole results_rx.recv() returned Err"),
+        }
+    }
 }
+

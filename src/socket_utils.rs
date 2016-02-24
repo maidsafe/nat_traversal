@@ -24,6 +24,8 @@ use socket_addr::SocketAddr;
 use std::io::ErrorKind;
 use net2;
 
+use ip::IpAddr;
+
 /// A self interruptable receive trait that allows a timed-out period to be defined
 pub trait RecvUntil {
     /// After specified timed-out period, the blocking receive method shall return with an error
@@ -91,6 +93,23 @@ pub fn ipv4_is_unspecified(addr: &Ipv4Addr) -> bool {
 // TODO(canndrew): Remove this once #[feature(ip)] is stable
 pub fn ipv6_is_unspecified(addr: &Ipv6Addr) -> bool {
     addr.segments() == [0, 0, 0, 0, 0, 0, 0, 0]
+}
+
+// TODO(canndrew): Remove this once #[feature(ip)] is stable
+pub fn ipv4_is_loopback(addr: &Ipv4Addr) -> bool {
+    addr.octets()[0] == 127
+}
+
+// TODO(canndrew): Remove this once #[feature(ip)] is stable
+pub fn ipv6_is_loopback(addr: &Ipv6Addr) -> bool {
+    addr.segments() == [0, 0, 0, 0, 0, 0, 0, 1]
+}
+
+pub fn is_loopback(addr: &IpAddr) -> bool {
+    match *addr {
+        IpAddr::V4(ref addr_v4) => ipv4_is_loopback(addr_v4),
+        IpAddr::V6(ref addr_v6) => ipv6_is_loopback(addr_v6),
+    }
 }
 
 #[cfg(target_family = "unix")]
