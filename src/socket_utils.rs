@@ -16,10 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use std::io;
-use std::net::{UdpSocket, Ipv4Addr, Ipv6Addr};
+use std::net::{TcpStream, UdpSocket, Ipv4Addr, Ipv6Addr};
+use std::net;
 use socket_addr::SocketAddr;
 use std::io::ErrorKind;
-//use net2::TcpBuilder;
+use net2;
 
 /// A self interruptable receive trait that allows a timed-out period to be defined
 pub trait RecvUntil {
@@ -90,32 +91,39 @@ pub fn ipv6_is_unspecified(addr: &Ipv6Addr) -> bool {
     addr.segments() == [0, 0, 0, 0, 0, 0, 0, 0]
 }
 
-/*
+#[cfg(target_family = "unix")]
+pub fn enable_so_reuseport(sock: &net2::TcpBuilder) -> io::Result<()> {
+    use net2::unix::UnixTcpBuilderExt;
+    let _ = try!(sock.reuse_port(true));
+    Ok(())
+}
+
+#[cfg(target_family = "windows")]
+pub fn enable_so_reuseport(sock: &net2::TcpBuilder) -> io::Result<()> {
+    Ok(())
+}
+
+// TODO(canndrew): This function should be deprecated once this issue
+// (https://github.com/rust-lang-nursery/net2-rs/issues/26) is resolved.
 #[cfg(target_family = "unix")]
 #[allow(unsafe_code)]
-pub fn enable_so_reuseport(sock: &TcpBuilder) -> io::Result<()> {
-    use std::os::unix::io::AsRawFd;
-    use libc;
-    use std;
-
-    let one: libc::c_int = 1;
-    let raw_fd = sock.as_raw_fd();
-    let one_ptr: *const libc::c_int = &one;
-    unsafe {
-        if libc::setsockopt(raw_fd,
-                            libc::SOL_SOCKET,
-                            libc::SO_REUSEPORT,
-                            one_ptr as *const libc::c_void,
-                            std::mem::size_of::<libc::c_int>() as libc::socklen_t) < 0 {
-            return Err(io::Error::last_os_error());
-        };
-    }
-    Ok(())
+pub fn tcp_builder_local_addr(sock: &net2::TcpBuilder) -> io::Result<net::SocketAddr> {
+    use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
+    let fd = sock.as_raw_fd();
+    let stream = unsafe { TcpStream::from_raw_fd(fd) };
+    let ret = stream.local_addr();
+    let _ = stream.into_raw_fd();
+    ret
 }
 
-#[cfg(not(target_family = "unix"))]
-pub fn enable_so_reuseport(sock: &TcpBuilder) -> io::Result<()> {
-    Ok(())
+#[cfg(target_family = "windows")]
+#[allow(unsafe_code)]
+pub fn tcp_builder_local_addr(sock: &net2::TcpBuilder) -> io::Result<net::SocketAddr> {
+    use std::os::windows::io::{AsRawSocket, FromRawSocket};
+    let fd = sock.as_raw_socket();
+    let stream = unsafe { TcpStream::from_raw_socket(fd) };
+    let ret = stream.local_addr();
+    std::mem::forget(stream); // TODO(canndrew): Is this completely safe?
+    ret
 }
-*/
 

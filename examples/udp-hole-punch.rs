@@ -104,7 +104,7 @@ fn main() {
             }
         };
         println!("Registering address: {:#?}", addr);
-        mapping_context.add_simple_servers(vec![addr]);
+        mapping_context.add_simple_udp_servers(vec![addr]);
     }
 
     // Now we use our context to create a mapped udp socket.

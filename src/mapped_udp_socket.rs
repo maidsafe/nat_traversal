@@ -261,7 +261,7 @@ impl MappedUdpSocket {
         const MAX_DATAGRAM_SIZE: usize = 256;
 
         let send_data = listener_message::REQUEST_MAGIC_CONSTANT;
-        let mut simple_servers: HashSet<SocketAddr> = mapping_context::simple_servers(&mc)
+        let mut simple_servers: HashSet<SocketAddr> = mapping_context::simple_udp_servers(&mc)
                                                                       .into_iter().collect();
 
         // Ping all the simple servers and waiting for a response.
