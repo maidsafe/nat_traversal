@@ -26,6 +26,8 @@ use net2;
 
 use ip::IpAddr;
 
+use utils;
+
 /// A self interruptable receive trait that allows a timed-out period to be defined
 pub trait RecvUntil {
     /// After specified timed-out period, the blocking receive method shall return with an error
@@ -43,15 +45,12 @@ impl RecvUntil for UdpSocket {
         let old_timeout = try!(self.read_timeout());
         loop {
             let current_time = ::time::SteadyTime::now();
-            let timeout_ms = (deadline - current_time).num_milliseconds();
-
-            if timeout_ms <= 0 {
+            if current_time >= deadline {
                 try!(self.set_read_timeout(old_timeout));
                 return Ok(None);
             }
-
-            // TODO (canndrew): should eventually be able to remove this conversion
-            let timeout = ::std::time::Duration::from_millis(timeout_ms as u64);
+            let timeout = deadline - current_time;
+            let timeout = utils::time_duration_to_std_duration(timeout);
             try!(self.set_read_timeout(Some(timeout)));
 
             match self.recv_from(buf) {
