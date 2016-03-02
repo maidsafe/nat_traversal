@@ -208,6 +208,10 @@ fn main() {
                     continue;
                 }
             };
+            if n == 0 {
+                println!("Disconnected.");
+                return;
+            }
             match std::str::from_utf8(&buf[..n]) {
                 Ok(s) => println!("{}", s),
                 Err(e) => println!("Peer sent invalid utf8 data. Error: {}", e),
