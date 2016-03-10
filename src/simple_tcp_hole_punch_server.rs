@@ -39,9 +39,9 @@ use mapped_tcp_socket::{MappedTcpSocket, MappedTcpSocketNewError, MappedTcpSocke
 const TCP_RW_TIMEOUT: u64 = 20;
 
 /// RAII type for a hole punch server which speaks the simple hole punching protocol.
-pub struct SimpleTcpHolePunchServer<'a> {
+pub struct SimpleTcpHolePunchServer<T: AsRef<MappingContext>> {
     // TODO(canndrew): Use this to refresh our external addrs.
-    _mapping_context: &'a MappingContext,
+    _mapping_context: T,
     stop_flag: Arc<AtomicBool>,
     local_addr: net::SocketAddr,
     _raii_joiner: RaiiThreadJoiner,
@@ -87,15 +87,15 @@ impl From<SimpleTcpHolePunchServerNewError> for io::Error {
     }
 }
 
-impl<'a> SimpleTcpHolePunchServer<'a> {
+impl<T: AsRef<MappingContext>> SimpleTcpHolePunchServer<T> {
     /// Create a new server. This will spawn a background thread which will serve requests until
     /// the server is dropped.
-    pub fn new(mapping_context: &'a MappingContext)
-        -> WResult<SimpleTcpHolePunchServer<'a>,
+    pub fn new(mapping_context: T)
+        -> WResult<SimpleTcpHolePunchServer<T>,
                    MappedTcpSocketMapWarning,
                    SimpleTcpHolePunchServerNewError>
     {
-        let (mapped_socket, warnings) = match MappedTcpSocket::new(mapping_context) {
+        let (mapped_socket, warnings) = match MappedTcpSocket::new(mapping_context.as_ref()) {
             WOk(mapped_socket, warnings) => (mapped_socket, warnings),
             WErr(e) => {
                 return WErr(SimpleTcpHolePunchServerNewError::CreateMappedSocket { err: e });
@@ -185,7 +185,7 @@ impl<'a> SimpleTcpHolePunchServer<'a> {
     }
 }
 
-impl<'a> Drop for SimpleTcpHolePunchServer<'a> {
+impl<T: AsRef<MappingContext>> Drop for SimpleTcpHolePunchServer<T> {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
         // Unblock the acceptor.

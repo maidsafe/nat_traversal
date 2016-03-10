@@ -37,9 +37,9 @@ use mapped_udp_socket::{MappedUdpSocket, MappedUdpSocketNewError, MappedUdpSocke
 const UDP_READ_TIMEOUT_SECS: u64 = 2;
 
 /// RAII type for a hole punch server which speaks the simple hole punching protocol.
-pub struct SimpleUdpHolePunchServer<'a> {
+pub struct SimpleUdpHolePunchServer<T: AsRef<MappingContext>> {
     // TODO(canndrew): Use this to refresh our external addrs.
-    _mapping_context: &'a MappingContext,
+    _mapping_context: T,
     stop_flag: Arc<AtomicBool>,
     _raii_joiner: RaiiThreadJoiner,
     known_endpoints: Vec<SocketAddr>,
@@ -81,15 +81,15 @@ impl From<SimpleUdpHolePunchServerNewError> for io::Error {
     }
 }
 
-impl<'a> SimpleUdpHolePunchServer<'a> {
+impl<T: AsRef<MappingContext>> SimpleUdpHolePunchServer<T> {
     /// Create a new server. This will spawn a background thread which will serve requests until
     /// the server is dropped.
-    pub fn new(mapping_context: &'a MappingContext)
-        -> WResult<SimpleUdpHolePunchServer<'a>,
+    pub fn new(mapping_context: T)
+        -> WResult<SimpleUdpHolePunchServer<T>,
                    MappedUdpSocketMapWarning,
                    SimpleUdpHolePunchServerNewError>
     {
-        let (mapped_socket, warnings) = match MappedUdpSocket::new(mapping_context) {
+        let (mapped_socket, warnings) = match MappedUdpSocket::new(mapping_context.as_ref()) {
             WOk(mapped_socket, warnings) => (mapped_socket, warnings),
             WErr(e) => {
                 return WErr(SimpleUdpHolePunchServerNewError::CreateMappedSocket { err: e });
@@ -151,7 +151,7 @@ impl<'a> SimpleUdpHolePunchServer<'a> {
     }
 }
 
-impl<'a> Drop for SimpleUdpHolePunchServer<'a> {
+impl<T: AsRef<MappingContext>> Drop for SimpleUdpHolePunchServer<T> {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
     }
