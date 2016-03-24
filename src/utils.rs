@@ -4,8 +4,21 @@ use time;
 
 // TODO(canndrew): Deprecate this function as soon as #[feature(time2)] is stable.
 pub fn time_duration_to_std_duration(dur: time::Duration) -> std::time::Duration {
-    let millis = dur.num_milliseconds();
-    std::time::Duration::from_millis(millis as u64)
+    let secs = dur.num_seconds();
+    let secs =  if secs < 0 { 0 } else { secs as u64 };
+    let nanos = match dur.num_nanoseconds() {
+        Some(v) => {
+            if v < 0 {
+                0
+            } else {
+                let secs_and_nanos_part = v as u64;
+                let secs_par = secs * 1_000_000_000;
+                (secs_and_nanos_part - secs_par) as u32
+            }
+        }
+        None => 0,
+    };
+    std::time::Duration::new(secs, nanos)
 }
 
 pub struct DisplaySlice<'a, T: 'a>(pub &'static str, pub &'a [T]);
